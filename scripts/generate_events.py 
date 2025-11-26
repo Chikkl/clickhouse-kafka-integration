@@ -1,0 +1,63 @@
+"""
+Генератор случайных событий в формате:
+{
+  "event_id": "<int>",
+  "user_id": "user_<N>",
+  "timestamp": "YYYY-MM-DDTHH:MM:SSZ"
+}
+
+Отправляет события в Kafka-топик 'user_events' через консольный producer.
+Предполагается, что контейнер kafka-broker запущен и доступен через `docker exec`.
+"""
+
+import json
+import random
+import subprocess
+import time
+from datetime import datetime, timedelta
+
+# Конфигурация
+TOPIC = "user_events"
+NUM_EVENTS = 500
+DELAY_SEC = 0.25  # пауза между событиями для наглядности
+
+def generate_event():
+    event_id = random.randint(1, 1_000_000)
+    user_id = f"user_{random.randint(1, 100)}"
+    # случайное время за последние 7 дней
+    now = datetime.utcnow()
+    rand_time = now - timedelta(days=random.randint(0, 7), 
+                                hours=random.randint(0, 23),
+                                minutes=random.randint(0, 59))
+    timestamp = rand_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    return {
+        "event_id": str(event_id),
+        "user_id": user_id,
+        "timestamp": timestamp
+    }
+
+def send_to_kafka(event):
+    # Используем docker exec для отправки в существующий контейнер kafka-broker
+    cmd = [
+        "docker", "exec", "-i", "kafka-broker",
+        "/opt/kafka/bin/kafka-console-producer.sh",
+        "--bootstrap-server", "localhost:9092",
+        "--topic", TOPIC
+    ]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
+    proc.stdin.write(json.dumps(event) + "\n")
+    proc.stdin.close()
+    proc.wait()
+
+def main():
+    print(f"🚀 Отправка {NUM_EVENTS} событий в топик '{TOPIC}'...")
+    for i in range(NUM_EVENTS):
+        event = generate_event()
+        send_to_kafka(event)
+        print(f"[{i+1}] Отправлено: {event}")
+        time.sleep(DELAY_SEC)
+    print("✅ Генерация завершена.")
+
+if __name__ == "__main__":
+    main()
